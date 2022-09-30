@@ -173,15 +173,38 @@ func setupServer(staticConfiguration *static.Configuration) (*server.Server, err
 	ctx := context.Background()
 	routinesPool := safe.NewPool(ctx)
 
+	var (
+		spiffeX509Source *workloadapi.X509Source
+		err              error
+	)
+
+	if staticConfiguration.Spiffe != nil && staticConfiguration.Spiffe.WorkloadAPIAddr != "" {
+		log.WithoutContext().Infof("Listening for spiffe certificates at address %q. Traefik will wait for the first SVID to be delivered before starting. If Traefik is hanging here, please double check that it is correctly registered as workload in your SPIFFE infrastructure.", staticConfiguration.Spiffe.WorkloadAPIAddr)
+
+		spiffeX509Source, err = workloadapi.NewX509Source(
+			ctx,
+			workloadapi.WithClientOptions(
+				workloadapi.WithAddr(
+					staticConfiguration.Spiffe.WorkloadAPIAddr,
+				),
+			),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("unable to create spiffe x509 source: %w", err)
+		}
+
+		log.WithoutContext().Info("Successfully obtained SPIFFE SVID.")
+	}
+
 	// adds internal provider
-	err := providerAggregator.AddProvider(traefik.New(*staticConfiguration))
+	err = providerAggregator.AddProvider(traefik.New(*staticConfiguration))
 	if err != nil {
 		return nil, err
 	}
 
 	// ACME
 
-	tlsManager := traefiktls.NewManager()
+	tlsManager := traefiktls.NewManager(spiffeX509Source)
 	httpChallengeProvider := acme.NewChallengeHTTP()
 
 	tlsChallengeProvider := acme.NewChallengeTLSALPN()
@@ -252,26 +275,6 @@ func setupServer(staticConfiguration *static.Configuration) (*server.Server, err
 	metricsRegistry := metrics.NewMultiRegistry(metricRegistries)
 
 	// Service manager factory
-
-	var spiffeX509Source *workloadapi.X509Source
-
-	if staticConfiguration.Spiffe != nil && staticConfiguration.Spiffe.WorkloadAPIAddr != "" {
-		log.WithoutContext().Infof("Listening for spiffe certificates at address %q. Traefik will wait for the first SVID to be delivered before starting. If Traefik is hanging here, please double check that it is correctly registered as workload in your SPIFFE infrastructure.", staticConfiguration.Spiffe.WorkloadAPIAddr)
-
-		spiffeX509Source, err = workloadapi.NewX509Source(
-			ctx,
-			workloadapi.WithClientOptions(
-				workloadapi.WithAddr(
-					staticConfiguration.Spiffe.WorkloadAPIAddr,
-				),
-			),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("unable to create spiffe x509 source: %w", err)
-		}
-
-		log.WithoutContext().Info("Successfully obtained SPIFFE SVID.")
-	}
 
 	roundTripperManager := service.NewRoundTripperManager(spiffeX509Source)
 	acmeHTTPHandler := getHTTPChallengeHandler(acmeProviders, httpChallengeProvider)

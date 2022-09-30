@@ -189,7 +189,7 @@ func (m *Manager) Get(storeName, configName string) (*tls.Config, error) {
 		domainToCheck := types.CanonicalDomain(clientHello.ServerName)
 
 		// If spiffe is enabled for this config and not in webserver mode, then we serve the SPIFFE sVID certificate.
-		if config.Spiffe != nil && config.Spiffe.NeedsServingSVIDCertificate() {
+		if config.Spiffe.NeedsServingSVIDCertificate() {
 			log.WithoutContext().Debugf("Serving the SPIFFE certificate for request: %q", domainToCheck)
 			return tlsconfig.GetCertificate(m.spiffeX509Source)(clientHello)
 		}
@@ -398,7 +398,7 @@ func (m *Manager) buildTLSConfig(tlsOption Options) (*tls.Config, error) {
 
 	// If SPIFFE is enabled, and in a mode where we need to validate the client certificate.
 	// Then require a client cert during handshake and hook spiffe authorizer.
-	if tlsOption.Spiffe != nil && tlsOption.Spiffe.NeedsClientCertValidation() {
+	if tlsOption.Spiffe.NeedsClientCertValidation() {
 		authorizer, err := spiffe.BuildAuthorizer(tlsOption.Spiffe.ClientIDs, tlsOption.Spiffe.TrustDomain)
 		if err != nil {
 			return nil, err
