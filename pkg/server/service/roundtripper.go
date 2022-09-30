@@ -11,12 +11,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/spiffe/go-spiffe/v2/bundle/x509bundle"
-	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
-	"github.com/spiffe/go-spiffe/v2/svid/x509svid"
 	"github.com/traefik/traefik/v2/pkg/config/dynamic"
 	"github.com/traefik/traefik/v2/pkg/log"
+	"github.com/traefik/traefik/v2/pkg/spiffe"
 	traefiktls "github.com/traefik/traefik/v2/pkg/tls"
 	"golang.org/x/net/http2"
 )
@@ -30,14 +28,8 @@ func (t *h2cTransportWrapper) RoundTrip(req *http.Request) (*http.Response, erro
 	return t.Transport.RoundTrip(req)
 }
 
-// SpiffeX509Source allows to retrieve an x509 sVID and an x509 bundle.
-type SpiffeX509Source interface {
-	x509svid.Source
-	x509bundle.Source
-}
-
 // NewRoundTripperManager creates a new RoundTripperManager.
-func NewRoundTripperManager(spiffeX509Source SpiffeX509Source) *RoundTripperManager {
+func NewRoundTripperManager(spiffeX509Source spiffe.X509Source) *RoundTripperManager {
 	return &RoundTripperManager{
 		roundTrippers:    make(map[string]http.RoundTripper),
 		configs:          make(map[string]*dynamic.ServersTransport),
@@ -51,7 +43,7 @@ type RoundTripperManager struct {
 	roundTrippers map[string]http.RoundTripper
 	configs       map[string]*dynamic.ServersTransport
 
-	spiffeX509Source SpiffeX509Source
+	spiffeX509Source spiffe.X509Source
 }
 
 // Update updates the roundtrippers configurations.
@@ -147,7 +139,7 @@ func (r *RoundTripperManager) createRoundTripper(cfg *dynamic.ServersTransport) 
 			)
 		}
 
-		spiffeAuthorizer, err := buildSpiffeAuthorizer(cfg)
+		spiffeAuthorizer, err := spiffe.BuildAuthorizer(cfg.ServerSpiffeIDs, cfg.ServerSpiffeTrustDomain)
 		if err != nil {
 			return nil, fmt.Errorf("unable to build spiffe authorizer: %w", err)
 		}
@@ -204,32 +196,4 @@ func createRootCACertPool(rootCAs []traefiktls.FileOrContent) *x509.CertPool {
 	}
 
 	return roots
-}
-
-func buildSpiffeAuthorizer(cfg *dynamic.ServersTransport) (tlsconfig.Authorizer, error) {
-	switch {
-	case len(cfg.ServerSpiffeIDs) > 0:
-		var (
-			spiffeIDs = make([]spiffeid.ID, len(cfg.ServerSpiffeIDs))
-			err       error
-		)
-
-		for i, rawID := range cfg.ServerSpiffeIDs {
-			spiffeIDs[i], err = spiffeid.FromString(rawID)
-			if err != nil {
-				return nil, fmt.Errorf("invalid server spiffeID provided: %w", err)
-			}
-		}
-
-		return tlsconfig.AuthorizeOneOf(spiffeIDs...), nil
-	case cfg.ServerSpiffeTrustDomain != "":
-		trustDomain, err := spiffeid.TrustDomainFromString(cfg.ServerSpiffeTrustDomain)
-		if err != nil {
-			return nil, fmt.Errorf("invalid spiffe trust domain provided: %w", err)
-		}
-
-		return tlsconfig.AuthorizeMemberOf(trustDomain), nil
-	default:
-		return tlsconfig.AuthorizeAny(), nil
-	}
 }

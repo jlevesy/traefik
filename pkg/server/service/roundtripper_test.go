@@ -1,27 +1,21 @@
 package service
 
 import (
-	"crypto/rand"
-	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
-	"crypto/x509/pkix"
-	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"sync/atomic"
 	"testing"
-	"time"
 
-	"github.com/spiffe/go-spiffe/v2/bundle/x509bundle"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
-	"github.com/spiffe/go-spiffe/v2/svid/x509svid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/traefik/traefik/v2/pkg/config/dynamic"
+	"github.com/traefik/traefik/v2/pkg/spiffe"
+	"github.com/traefik/traefik/v2/pkg/spiffe/spiffetest"
 	traefiktls "github.com/traefik/traefik/v2/pkg/tls"
 )
 
@@ -245,18 +239,18 @@ func TestSpiffeMTLS(t *testing.T) {
 
 	trustDomain := spiffeid.RequireTrustDomainFromString("spiffe://traefik.test")
 
-	pki, err := newFakeSpiffePKI(trustDomain)
+	pki, err := spiffetest.NewPKI(trustDomain)
 	require.NoError(t, err)
 
-	clientSVID, err := pki.genSVID(spiffeid.RequireFromPath(trustDomain, "/client"))
+	clientSVID, err := pki.GenSVID(spiffeid.RequireFromPath(trustDomain, "/client"))
 	require.NoError(t, err)
 
-	serverSVID, err := pki.genSVID(spiffeid.RequireFromPath(trustDomain, "/server"))
+	serverSVID, err := pki.GenSVID(spiffeid.RequireFromPath(trustDomain, "/server"))
 	require.NoError(t, err)
 
-	serverSource := fakeSpiffeSource{
-		svid:   serverSVID,
-		bundle: pki.bundle,
+	serverSource := spiffetest.X509Source{
+		SVID:   serverSVID,
+		Bundle: pki.Bundle(),
 	}
 
 	// go-spiffe's `tlsconfig.MTLSServerConfig` (that should be used here) does not set a certificate on
@@ -277,15 +271,15 @@ func TestSpiffeMTLS(t *testing.T) {
 	srv.StartTLS()
 	defer srv.Close()
 
-	clientSource := fakeSpiffeSource{
-		svid:   clientSVID,
-		bundle: pki.bundle,
+	clientSource := spiffetest.X509Source{
+		SVID:   clientSVID,
+		Bundle: pki.Bundle(),
 	}
 
 	testCases := []struct {
 		desc             string
 		config           dynamic.ServersTransport
-		clientSource     SpiffeX509Source
+		clientSource     spiffe.X509Source
 		wantStatusCode   int
 		wantErrorMessage string
 	}{
@@ -450,117 +444,4 @@ func TestDisableHTTP2(t *testing.T) {
 			assert.Equal(t, test.expectedProto, resp.Proto)
 		})
 	}
-}
-
-// fakeSpiffePKI simulates a SPIFFE aware PKI and allows generating multiple valid SVIDs.
-type fakeSpiffePKI struct {
-	caPrivateKey *rsa.PrivateKey
-
-	bundle *x509bundle.Bundle
-}
-
-func newFakeSpiffePKI(trustDomain spiffeid.TrustDomain) (fakeSpiffePKI, error) {
-	caPrivateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		return fakeSpiffePKI{}, err
-	}
-
-	caTemplate := x509.Certificate{
-		SerialNumber: big.NewInt(2000),
-		Subject: pkix.Name{
-			Organization: []string{"spiffe"},
-		},
-		URIs:         []*url.URL{spiffeid.RequireFromPath(trustDomain, "/ca").URL()},
-		NotBefore:    time.Now(),
-		NotAfter:     time.Now().Add(time.Hour),
-		SubjectKeyId: []byte("ca"),
-		KeyUsage: x509.KeyUsageCertSign |
-			x509.KeyUsageCRLSign,
-		BasicConstraintsValid: true,
-		IsCA:                  true,
-		PublicKey:             caPrivateKey.Public(),
-	}
-	if err != nil {
-		return fakeSpiffePKI{}, err
-	}
-
-	caCertDER, err := x509.CreateCertificate(
-		rand.Reader,
-		&caTemplate,
-		&caTemplate,
-		caPrivateKey.Public(),
-		caPrivateKey,
-	)
-	if err != nil {
-		return fakeSpiffePKI{}, err
-	}
-
-	bundle, err := x509bundle.ParseRaw(
-		trustDomain,
-		caCertDER,
-	)
-	if err != nil {
-		return fakeSpiffePKI{}, err
-	}
-
-	return fakeSpiffePKI{
-		bundle:       bundle,
-		caPrivateKey: caPrivateKey,
-	}, nil
-}
-
-func (f *fakeSpiffePKI) genSVID(id spiffeid.ID) (*x509svid.SVID, error) {
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		return nil, err
-	}
-
-	template := x509.Certificate{
-		SerialNumber: big.NewInt(200001),
-		URIs:         []*url.URL{id.URL()},
-		NotBefore:    time.Now(),
-		NotAfter:     time.Now().Add(time.Hour),
-		SubjectKeyId: []byte("svid"),
-		KeyUsage: x509.KeyUsageKeyEncipherment |
-			x509.KeyUsageKeyAgreement |
-			x509.KeyUsageDigitalSignature,
-		ExtKeyUsage: []x509.ExtKeyUsage{
-			x509.ExtKeyUsageServerAuth,
-			x509.ExtKeyUsageClientAuth,
-		},
-		BasicConstraintsValid: true,
-		PublicKey:             privateKey.PublicKey,
-	}
-
-	certDER, err := x509.CreateCertificate(
-		rand.Reader,
-		&template,
-		f.bundle.X509Authorities()[0],
-		privateKey.Public(),
-		f.caPrivateKey,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	keyPKCS8, err := x509.MarshalPKCS8PrivateKey(privateKey)
-	if err != nil {
-		return nil, err
-	}
-
-	return x509svid.ParseRaw(certDER, keyPKCS8)
-}
-
-// fakeSpiffeSource allows retrieving staticly an SVID and its associated bundle.
-type fakeSpiffeSource struct {
-	bundle *x509bundle.Bundle
-	svid   *x509svid.SVID
-}
-
-func (s *fakeSpiffeSource) GetX509BundleForTrustDomain(trustDomain spiffeid.TrustDomain) (*x509bundle.Bundle, error) {
-	return s.bundle, nil
-}
-
-func (s *fakeSpiffeSource) GetX509SVID() (*x509svid.SVID, error) {
-	return s.svid, nil
 }
