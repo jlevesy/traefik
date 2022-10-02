@@ -48,6 +48,8 @@ type TLSOptionSpec struct {
 	// ALPNProtocols defines the list of supported application level protocols for the TLS handshake, in order of preference.
 	// More info: https://doc.traefik.io/traefik/v2.9/https/tls/#alpn-protocols
 	ALPNProtocols []string `json:"alpnProtocols,omitempty"`
+	// Spiffe configures server side SPIFFE on this router.
+	Spiffe SpiffeOptions `json:"spiffe,omitempty"`
 }
 
 // +k8s:deepcopy-gen=true
@@ -59,6 +61,23 @@ type ClientAuth struct {
 	// ClientAuthType defines the client authentication type to apply.
 	// +kubebuilder:validation:Enum=NoClientCert;RequestClientCert;RequireAnyClientCert;VerifyClientCertIfGiven;RequireAndVerifyClientCert
 	ClientAuthType string `json:"clientAuthType,omitempty"`
+}
+
+// +k8s:deepcopy-gen=true
+
+// SpiffeOptions configures server side SPIFFE.
+type SpiffeOptions struct {
+	// Mode defines Traefik behavior regarding SPIFFE certificates. There are 4 possible settings:
+	// - Empty: SPIFFE is not enabled for this router.
+	// - TLS: Traefik serves its SPIFFE ceritifate, but does not require nor validate any client certificate
+	// - mTLS: Traefik serves its SPIFFE certificate, and checks the validity of client SPIFFE certificate. Optionally checks the client certificate Spiffe ID if either ClientIDs or TrustDomain are given.
+	// - mTLSWebServer: Traefik serves the configured certificate but checks the validation of the client SPIFFE certificate. Optionally checks the client certificate Spiffe ID if either ClientIDs or TrustDomain are given.
+	// +kubebuilder:validation:Enum=TLS;mTLS;mTLSWebServer
+	Mode string `json:"mode,omitempty"`
+	// List of allowed client SpiffeIDs, only applied if mode is mTLS or mTLSWebServer, takes precedence over TrustDomain.
+	ClientIDs []string `json:"clientIDs,omitempty"`
+	// Allowed SPIFFE trust domain for client certificates, only applied if mode is mTLS or mTLSWebServer.
+	TrustDomain string `json:"trustDomain,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

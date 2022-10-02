@@ -886,6 +886,11 @@ func buildTLSOptions(ctx context.Context, client Client) map[string]tls.Options 
 			},
 			SniStrict:     tlsOption.Spec.SniStrict,
 			ALPNProtocols: alpnProtocols,
+			Spiffe: tls.SpiffeOptions{
+				Mode:        tlsOption.Spec.Spiffe.Mode,
+				ClientIDs:   tlsOption.Spec.Spiffe.ClientIDs,
+				TrustDomain: tlsOption.Spec.Spiffe.TrustDomain,
+			},
 		}
 	}
 
