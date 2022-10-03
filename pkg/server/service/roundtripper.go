@@ -149,6 +149,8 @@ func (r *RoundTripperManager) createRoundTripper(cfg *dynamic.ServersTransport) 
 			r.spiffeX509Source,
 			spiffeAuthorizer,
 		)
+
+		transport.TLSClientConfig.ServerName = cfg.ServerName
 	}
 
 	if cfg.ForwardingTimeouts != nil {
@@ -156,7 +158,7 @@ func (r *RoundTripperManager) createRoundTripper(cfg *dynamic.ServersTransport) 
 		transport.IdleConnTimeout = time.Duration(cfg.ForwardingTimeouts.IdleConnTimeout)
 	}
 
-	if cfg.InsecureSkipVerify || len(cfg.RootCAs) > 0 || len(cfg.ServerName) > 0 || len(cfg.Certificates) > 0 || cfg.PeerCertURI != "" {
+	if cfg.InsecureSkipVerify || len(cfg.RootCAs) > 0 || (len(cfg.ServerName) > 0 && !cfg.EnableSpiffeMTLS) || len(cfg.Certificates) > 0 || cfg.PeerCertURI != "" {
 		transport.TLSClientConfig = &tls.Config{
 			ServerName:         cfg.ServerName,
 			InsecureSkipVerify: cfg.InsecureSkipVerify,
