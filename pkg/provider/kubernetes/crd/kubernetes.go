@@ -873,6 +873,17 @@ func buildTLSOptions(ctx context.Context, client Client) map[string]tls.Options 
 			alpnProtocols = tlsOption.Spec.ALPNProtocols
 		}
 
+		var spiffeOptions *tls.SpiffeOptions
+
+		if tlsOption.Spec.Spiffe != nil {
+			spiffeOptions = &tls.SpiffeOptions{
+				ServeSVID:          tlsOption.Spec.Spiffe.ServeSVID,
+				ValidateClientCert: tlsOption.Spec.Spiffe.ValidateClientCert,
+				IDs:                tlsOption.Spec.Spiffe.IDs,
+				TrustDomain:        tlsOption.Spec.Spiffe.TrustDomain,
+			}
+		}
+
 		tlsOptions[id] = tls.Options{
 			MinVersion:       tlsOption.Spec.MinVersion,
 			MaxVersion:       tlsOption.Spec.MaxVersion,
@@ -884,6 +895,7 @@ func buildTLSOptions(ctx context.Context, client Client) map[string]tls.Options 
 			},
 			SniStrict:     tlsOption.Spec.SniStrict,
 			ALPNProtocols: alpnProtocols,
+			Spiffe:        spiffeOptions,
 		}
 	}
 

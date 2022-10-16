@@ -48,6 +48,8 @@ type TLSOptionSpec struct {
 	// ALPNProtocols defines the list of supported application level protocols for the TLS handshake, in order of preference.
 	// More info: https://doc.traefik.io/traefik/v2.9/https/tls/#alpn-protocols
 	ALPNProtocols []string `json:"alpnProtocols,omitempty"`
+	// Spiffe configures server side SPIFFE on this router.
+	Spiffe *SpiffeOptions `json:"spiffe,omitempty"`
 }
 
 // +k8s:deepcopy-gen=true
@@ -59,6 +61,22 @@ type ClientAuth struct {
 	// ClientAuthType defines the client authentication type to apply.
 	// +kubebuilder:validation:Enum=NoClientCert;RequestClientCert;RequireAnyClientCert;VerifyClientCertIfGiven;RequireAndVerifyClientCert
 	ClientAuthType string `json:"clientAuthType,omitempty"`
+}
+
+// +k8s:deepcopy-gen=true
+
+// SpiffeOptions configures server side SPIFFE.
+type SpiffeOptions struct {
+	// Serve the spiffe x509 SVID as certificate.
+	// +kubebuilder:default:=true
+	ServeSVID bool `json:"serveSVID,omitempty"`
+	// Require and Validate the client certificate using the SPIFFE trust chain.
+	// +kubebuilder:default:=true
+	ValidateClientCert bool `json:"validateClientCert,omitempty"`
+	// List of allowed client SpiffeIDs, only applied if mode is mTLS or mTLSWebServer, takes precedence over TrustDomain.
+	IDs []string `json:"ids,omitempty"`
+	// Allowed SPIFFE trust domain for client certificates, only applied if mode is mTLS or mTLSWebServer.
+	TrustDomain string `json:"trustDomain,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
