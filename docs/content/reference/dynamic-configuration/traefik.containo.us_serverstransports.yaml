@@ -122,6 +122,9 @@ spec:
                     items:
                       type: string
                     type: array
+                  serverName:
+                    description: ServerName used to contact the backend server.
+                    type: string
                   trustDomain:
                     description: TrustDomain defines the allowed SPIFFE trust domain.
                     type: string
