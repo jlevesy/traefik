@@ -312,7 +312,7 @@ func TestRuntimeConfiguration(t *testing.T) {
 				TCPRouters:  test.tcpRouterConfig,
 			}
 			serviceManager := tcp.NewManager(conf)
-			tlsManager := traefiktls.NewManager()
+			tlsManager := traefiktls.NewManager(nil)
 			tlsManager.UpdateConfigs(
 				context.Background(),
 				map[string]traefiktls.Store{},
@@ -624,7 +624,7 @@ func TestDomainFronting(t *testing.T) {
 
 			serviceManager := tcp.NewManager(conf)
 
-			tlsManager := traefiktls.NewManager()
+			tlsManager := traefiktls.NewManager(nil)
 			tlsManager.UpdateConfigs(context.Background(), map[string]traefiktls.Store{}, test.tlsOptions, []*traefiktls.CertAndStores{})
 
 			httpsHandler := map[string]http.Handler{
