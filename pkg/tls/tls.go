@@ -16,16 +16,33 @@ type ClientAuth struct {
 
 // +k8s:deepcopy-gen=true
 
+// SpiffeOptions configures server side SPIFFE.
+type SpiffeOptions struct {
+	ServeSVID          bool     `description:"Serve Traefik SVID as certificate", json:"serveSVID,omitempty" toml:"serveSVID,omitempty" yaml:"serveSVID,omitempty" export:"true"`
+	ValidateClientCert bool     `description:"Require and validate client certificate", json:"validateClientCert,omitempty" toml:"validateClientCert,omitempty" yaml:"validateClientCert,omitempty" export:"true"`
+	IDs                []string `description:"Lists all allowed client spiffeIDs. Takes precedences over TrustDomain." json:"ids,omitempty" toml:"ids,omitempty" yaml:"ids,omitempty" export:"true"`
+	TrustDomain        string   `description:"Specifies an allowed Spiffe trust domain for clients." json:"trustDomain,omitempty" yaml:"trustDomain,omitempty" toml:"trustDomain,omitempty"`
+}
+
+func (o *SpiffeOptions) SetDefaults() {
+	// Do SPIFFE mTLS by default if spiffe is enabled.
+	o.ServeSVID = true
+	o.ValidateClientCert = true
+}
+
+// +k8s:deepcopy-gen=true
+
 // Options configures TLS for an entry point.
 type Options struct {
-	MinVersion               string     `json:"minVersion,omitempty" toml:"minVersion,omitempty" yaml:"minVersion,omitempty" export:"true"`
-	MaxVersion               string     `json:"maxVersion,omitempty" toml:"maxVersion,omitempty" yaml:"maxVersion,omitempty" export:"true"`
-	CipherSuites             []string   `json:"cipherSuites,omitempty" toml:"cipherSuites,omitempty" yaml:"cipherSuites,omitempty" export:"true"`
-	CurvePreferences         []string   `json:"curvePreferences,omitempty" toml:"curvePreferences,omitempty" yaml:"curvePreferences,omitempty" export:"true"`
-	ClientAuth               ClientAuth `json:"clientAuth,omitempty" toml:"clientAuth,omitempty" yaml:"clientAuth,omitempty"`
-	SniStrict                bool       `json:"sniStrict,omitempty" toml:"sniStrict,omitempty" yaml:"sniStrict,omitempty" export:"true"`
-	PreferServerCipherSuites bool       `json:"preferServerCipherSuites,omitempty" toml:"preferServerCipherSuites,omitempty" yaml:"preferServerCipherSuites,omitempty" export:"true"` // Deprecated: https://github.com/golang/go/issues/45430
-	ALPNProtocols            []string   `json:"alpnProtocols,omitempty" toml:"alpnProtocols,omitempty" yaml:"alpnProtocols,omitempty" export:"true"`
+	MinVersion               string         `json:"minVersion,omitempty" toml:"minVersion,omitempty" yaml:"minVersion,omitempty" export:"true"`
+	MaxVersion               string         `json:"maxVersion,omitempty" toml:"maxVersion,omitempty" yaml:"maxVersion,omitempty" export:"true"`
+	CipherSuites             []string       `json:"cipherSuites,omitempty" toml:"cipherSuites,omitempty" yaml:"cipherSuites,omitempty" export:"true"`
+	CurvePreferences         []string       `json:"curvePreferences,omitempty" toml:"curvePreferences,omitempty" yaml:"curvePreferences,omitempty" export:"true"`
+	ClientAuth               ClientAuth     `json:"clientAuth,omitempty" toml:"clientAuth,omitempty" yaml:"clientAuth,omitempty"`
+	SniStrict                bool           `json:"sniStrict,omitempty" toml:"sniStrict,omitempty" yaml:"sniStrict,omitempty" export:"true"`
+	PreferServerCipherSuites bool           `json:"preferServerCipherSuites,omitempty" toml:"preferServerCipherSuites,omitempty" yaml:"preferServerCipherSuites,omitempty" export:"true"` // Deprecated: https://github.com/golang/go/issues/45430
+	ALPNProtocols            []string       `json:"alpnProtocols,omitempty" toml:"alpnProtocols,omitempty" yaml:"alpnProtocols,omitempty" export:"true"`
+	Spiffe                   *SpiffeOptions `json:"spiffe,omitempty" toml:"spiffe,omitempty" yaml:"spiffe,omitempty"`
 }
 
 // SetDefaults sets the default values for an Options struct.

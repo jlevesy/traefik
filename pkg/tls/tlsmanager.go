@@ -12,7 +12,9 @@ import (
 	"github.com/go-acme/lego/v4/challenge/dns01"
 	"github.com/go-acme/lego/v4/challenge/tlsalpn01"
 	"github.com/sirupsen/logrus"
+	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
 	"github.com/traefik/traefik/v2/pkg/log"
+	"github.com/traefik/traefik/v2/pkg/spiffe"
 	"github.com/traefik/traefik/v2/pkg/tls/generate"
 	"github.com/traefik/traefik/v2/pkg/types"
 )
@@ -44,20 +46,22 @@ func getCipherSuites() []string {
 
 // Manager is the TLS option/store/configuration factory.
 type Manager struct {
-	lock         sync.RWMutex
-	storesConfig map[string]Store
-	stores       map[string]*CertificateStore
-	configs      map[string]Options
-	certs        []*CertAndStores
+	lock             sync.RWMutex
+	storesConfig     map[string]Store
+	stores           map[string]*CertificateStore
+	configs          map[string]Options
+	certs            []*CertAndStores
+	spiffeX509Source spiffe.X509Source
 }
 
 // NewManager creates a new Manager.
-func NewManager() *Manager {
+func NewManager(spiffeX509Source spiffe.X509Source) *Manager {
 	return &Manager{
 		stores: map[string]*CertificateStore{},
 		configs: map[string]Options{
 			"default": DefaultTLSOptions,
 		},
+		spiffeX509Source: spiffeX509Source,
 	}
 }
 
@@ -164,7 +168,7 @@ func (m *Manager) Get(storeName, configName string) (*tls.Config, error) {
 	config, ok := m.configs[configName]
 	if ok {
 		sniStrict = config.SniStrict
-		tlsConfig, err = buildTLSConfig(config)
+		tlsConfig, err = m.buildTLSConfig(config)
 	} else {
 		err = fmt.Errorf("unknown TLS options: %s", configName)
 	}
@@ -183,6 +187,12 @@ func (m *Manager) Get(storeName, configName string) (*tls.Config, error) {
 
 	tlsConfig.GetCertificate = func(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 		domainToCheck := types.CanonicalDomain(clientHello.ServerName)
+
+		// If spiffe is enabled for this config and not in webserver mode, then we serve the SPIFFE sVID certificate.
+		if config.Spiffe != nil && config.Spiffe.ServeSVID {
+			log.WithoutContext().Debugf("Serving the SPIFFE certificate for request: %q", domainToCheck)
+			return tlsconfig.GetCertificate(m.spiffeX509Source)(clientHello)
+		}
 
 		if isACMETLS(clientHello) {
 			certificate := acmeTLSStore.GetBestCertificate(clientHello)
@@ -301,7 +311,7 @@ func getDefaultCertificate(ctx context.Context, tlsStore Store, st *CertificateS
 }
 
 // creates a TLS config that allows terminating HTTPS for multiple domains using SNI.
-func buildTLSConfig(tlsOption Options) (*tls.Config, error) {
+func (m *Manager) buildTLSConfig(tlsOption Options) (*tls.Config, error) {
 	conf := &tls.Config{
 		NextProtos: tlsOption.ALPNProtocols,
 	}
@@ -384,6 +394,22 @@ func buildTLSConfig(tlsOption Options) (*tls.Config, error) {
 				return nil, fmt.Errorf("invalid CurveID in curvePreferences: %s", curve)
 			}
 		}
+	}
+
+	// If SPIFFE is enabled, and in a mode where we need to validate the client certificate.
+	// Then require a client cert during handshake and hook spiffe authorizer.
+	if tlsOption.Spiffe != nil && tlsOption.Spiffe.ValidateClientCert {
+		authorizer, err := spiffe.BuildAuthorizer(tlsOption.Spiffe.IDs, tlsOption.Spiffe.TrustDomain)
+		if err != nil {
+			return nil, err
+		}
+
+		conf.ClientAuth = tls.RequireAnyClientCert
+		conf.VerifyPeerCertificate = tlsconfig.WrapVerifyPeerCertificate(
+			conf.VerifyPeerCertificate,
+			m.spiffeX509Source,
+			authorizer,
+		)
 	}
 
 	return conf, nil
