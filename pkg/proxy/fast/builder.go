@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"reflect"
 	"time"
 
@@ -117,6 +118,15 @@ func (r *ProxyBuilder) getPool(cfgName string, config *dynamic.ServersTransport,
 	}, tlsConfig)
 
 	connPool := newConnPool(config.MaxIdleConnsPerHost, idleConnTimeout, responseHeaderTimeout, func() (net.Conn, error) {
+		if isUnix(targetURL) {
+			return proxyDialer.Dial(
+				"unix",
+				// Joining with the host properly handles unix sockets with relative paths, ie unix://./some/path.sock
+				// In that case, . is considered as the host. Otherwise host is "".
+				filepath.Join(targetURL.Host, targetURL.Path),
+			)
+		}
+
 		return proxyDialer.Dial("tcp", addrFromURL(targetURL))
 	})
 

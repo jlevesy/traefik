@@ -201,6 +201,14 @@ func (p *ReverseProxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	outReq.SetHost(u2.Host)
 	outReq.Header.SetHost(u2.Host)
 
+	// fasthttp requires an host to be set when writing the request.
+	// As the targetURL is an unix socket it doesn't properly have an host.
+	// To workaround this issue, we set a static string as a host.
+	if isUnix(p.targetURL) {
+		outReq.SetHost("unix")
+		outReq.Header.SetHost("unix")
+	}
+
 	if p.passHostHeader {
 		outReq.Header.SetHost(req.Host)
 	}
@@ -395,4 +403,8 @@ func cleanWebSocketHeaders(headers fasthttpHeader) {
 
 	headers.SetBytesV("Sec-WebSocket-Version", headers.Peek("Sec-Websocket-Version"))
 	headers.DelBytes([]byte("Sec-Websocket-Version"))
+}
+
+func isUnix(u *url.URL) bool {
+	return u.Scheme == "unix" || u.Scheme == "unix+http"
 }

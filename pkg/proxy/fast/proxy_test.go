@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -276,6 +277,77 @@ func TestPreservePath(t *testing.T) {
 
 	assert.Equal(t, 1, callCount)
 	assert.Equal(t, http.StatusOK, res.Code)
+}
+
+func TestProxyUnixBackend(t *testing.T) {
+	for _, tc := range []struct {
+		desc    string
+		scheme  string
+		sockDir string
+	}{
+		{
+			desc:   "unix scheme",
+			scheme: "unix",
+		},
+		{
+			desc:   "unix+http scheme",
+			scheme: "unix+http",
+		},
+		{
+			desc:    "relative path",
+			scheme:  "unix",
+			sockDir: "./",
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			sockDir := tc.sockDir
+
+			if sockDir == "" {
+				sockDir = t.TempDir()
+			}
+
+			backendURL := newUnixBackend(t, sockDir, func(rw http.ResponseWriter, r *http.Request) {
+				rw.Write([]byte("backendunix"))
+			})
+
+			builder := NewProxyBuilder(&transportManagerMock{}, static.FastProxyConfig{})
+
+			reverseProxy, err := builder.Build("foounix", testhelpers.MustParseURL(tc.scheme+"://"+backendURL), false, false)
+			require.NoError(t, err)
+
+			reverseProxyServer := httptest.NewServer(reverseProxy)
+			t.Cleanup(reverseProxyServer.Close)
+
+			client := http.Client{Timeout: 5 * time.Second}
+
+			resp, err := client.Get(reverseProxyServer.URL)
+			require.NoError(t, err)
+
+			assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+
+			assert.Equal(t, "backendunix", string(body))
+		})
+	}
+}
+
+func newUnixBackend(t *testing.T, socketDir string, handler http.HandlerFunc) string {
+	t.Helper()
+
+	var (
+		sockPath = filepath.Join(socketDir, "serversock.unix")
+		srv      = http.Server{Handler: handler}
+	)
+
+	ln, err := net.Listen("unix", sockPath)
+	require.NoError(t, err)
+
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
+
+	return sockPath
 }
 
 func newCertificate(t *testing.T, domain string) *tls.Certificate {
